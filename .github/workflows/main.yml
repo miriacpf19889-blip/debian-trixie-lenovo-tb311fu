@@ -3,10 +3,8 @@ name: Build kernel
 on:
   push:
     branches:
-      - add-debian-build-script
+      - '**'
   pull_request:
-    branches:
-      - add-debian-build-script
   workflow_dispatch:
 
 permissions:
@@ -18,7 +16,7 @@ concurrency:
 
 jobs:
   build-kernel:
-    name: Build TB311FU kernel
+    name: Build TB311FU kernel with Android Clang
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     steps:
@@ -29,16 +27,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            bc bison build-essential ca-certificates cpio dwarves flex git \
-            libelf-dev libncurses-dev libssl-dev libtinfo6 make openssl \
-            python3 rsync
+            bc bison build-essential ca-certificates curl flex git libelf-dev \
+            libncurses-dev libssl-dev make openssl python3 rsync tar
 
-      - name: Build kernel
+      - name: Build Android Common kernel
         env:
           JOBS: 2
         run: bash scripts/build-kernel
 
-      - name: Upload kernel build artifacts
+      - name: Upload kernel image and configuration
         uses: actions/upload-artifact@v4
         with:
           name: tb311fu-kernel-${{ github.sha }}
