@@ -1,0 +1,48 @@
+name: Build kernel
+
+on:
+  push:
+    branches:
+      - add-debian-build-script
+  pull_request:
+    branches:
+      - add-debian-build-script
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kernel-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-kernel:
+    name: Build TB311FU kernel
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install kernel build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison build-essential ca-certificates cpio dwarves flex git \
+            libelf-dev libncurses-dev libssl-dev libtinfo6 make openssl \
+            python3 rsync
+
+      - name: Build kernel
+        env:
+          JOBS: 2
+        run: bash scripts/build-kernel
+
+      - name: Upload kernel build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tb311fu-kernel-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            build/kernel/arch/arm64/boot/Image
+            build/kernel/.config

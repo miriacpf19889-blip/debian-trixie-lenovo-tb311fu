@@ -1,34 +1,56 @@
-# Build
+# Build guide
 
-This repository is an experimental Debian 13 (Trixie) port for the Lenovo Tab TB311FU. The build pipeline is not yet implemented in this repository: it currently has no kernel configuration, build scripts, Debian rootfs recipe, or image packaging. Do not treat the commands below as a complete device-image build.
+This experimental project does not yet build a complete Debian image. The script below builds the upstream TB311FU Android Common kernel only; rootfs creation, boot image packaging, and installation are not automated here.
 
-## Host prerequisites
+## 1. Install build tools
 
-Use a Debian 13 or compatible Linux x86-64 build host with:
+On a Debian 13 (Trixie) x86-64 host:
 
-- Git, `make`, Python 3, `bc`, `bison`, `flex`, `libssl-dev`, `libelf-dev`, and ` dwarves` (package name `dwarves`).
-- An AArch64 cross compiler (for example, `gcc-aarch64-linux-gnu`).
-- The Android Clang toolchain required by the upstream kernel project.
-- `debootstrap` for creating a Debian Trixie arm64 root filesystem.
-- Several tens of gigabytes of free disk space for source trees, build outputs, and the root filesystem.
+```sh
+sudo apt update
+sudo apt install -y git make python3 bc bison flex libssl-dev libelf-dev dwarves \
+  gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
+```
 
-Some packages may have different names on non-Debian hosts.
+Allow plenty of free disk space for the kernel source and build output. The Android Clang r510928 toolchain is also required; obtain it using the upstream project's toolchain instructions. The script does not download the toolchain automatically.
 
-## Kernel and toolchain
+## 2. Clone this project
 
-The upstream TB311FU project documents Android Common kernel `android15-6.6.142_r00` at commit `1782065b5f3dad41d3785247e50820553c3473e6` and Android Clang `r510928`. Check the upstream build documentation before building, since its source and build requirements may change:
+```sh
+git clone https://github.com/miriacpf19889-blip/debian-trixie-lenovo-tb311fu.git
+cd debian-trixie-lenovo-tb311fu
+```
+
+## 3. Set the toolchain path
+
+Set `CLANG_BIN` to the directory containing the toolchain's `clang` executable. For example, if Clang is installed at `$HOME/toolchains/clang-r510928/bin/clang`:
+
+```sh
+export CLANG_BIN="$HOME/toolchains/clang-r510928/bin"
+```
+
+## 4. Build the kernel
+
+```sh
+chmod +x scripts/build-kernel
+JOBS="$(nproc)" ./scripts/build-kernel
+```
+
+The script clones the upstream device configuration and Android Common kernel into `build/sources/`, checks out the pinned revisions, applies the upstream host-OpenSSL compatibility patch, and builds the arm64 `Image` and kernel modules. The first run downloads a large kernel source tree and can take a while.
+
+Expected kernel image:
+
+```text
+build/kernel/arch/arm64/boot/Image
+```
+
+To use existing source/output directories, set `UPSTREAM_DIR`, `KERNEL_SRC`, `KERNEL_OUT`, or `BUILD_DIR` before running the script. `CLANG_BIN` is required. `JOBS` controls parallel build jobs.
+
+## What is not built yet
+
+This script does not create a Debian Trixie root filesystem or a flashable/bootable device image. It also does not install modules into a rootfs, package firmware, or flash the tablet. Those steps need device-specific packaging and verified installation instructions before they can safely be automated.
+
+## References
 
 - [Upstream build guide](https://github.com/soumarcelino/linux-lenovo-tb311fu/blob/main/docs/build.md)
 - [Upstream kernel source manifest](https://github.com/soumarcelino/linux-lenovo-tb311fu/blob/main/kernel/source.json)
-
-The upstream build scripts expect to run from a checkout of that project, which contains device-specific kernel configuration and scripts. They are not included in this Debian repository yet. Do not run those commands from this repository and expect them to work.
-
-## Debian root filesystem
-
-The intended root filesystem is Debian Trixie for `arm64`. A future build script should bootstrap it with `debootstrap`, configure the target account and device adaptation, then install the matching kernel modules and firmware. Rootfs creation requires elevated privileges; keep it in a dedicated build directory and never point a bootstrap or cleanup command at a mounted host filesystem.
-
-No rootfs bootstrap script or package list is currently provided here. Until those are added, rootfs creation and integration remain manual and unverified.
-
-## Expected build outputs
-
-A complete build should produce separately identifiable kernel, modules, and Debian rootfs artifacts under a build/output directory. This repository does not yet produce those artifacts. Record source revisions and toolchain versions alongside future release images so builds can be reproduced.
