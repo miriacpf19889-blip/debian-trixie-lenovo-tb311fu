@@ -6,17 +6,17 @@ BUILD_DIR=${BUILD_DIR:-"$ROOT/build"}
 SOURCES_DIR="$BUILD_DIR/sources"
 UPSTREAM_DIR=${UPSTREAM_DIR:-"$SOURCES_DIR/linux-lenovo-tb311fu"}
 KERNEL_SRC=${KERNEL_SRC:-"$SOURCES_DIR/android-common"}
+CLANG_SRC=${CLANG_SRC:-"$SOURCES_DIR/aosp-clang"}
 KERNEL_OUT=${KERNEL_OUT:-"$BUILD_DIR/kernel"}
 UPSTREAM_URL=https://github.com/soumarcelino/linux-lenovo-tb311fu.git
 KERNEL_URL=https://android.googlesource.com/kernel/common
+CLANG_URL=https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86
 UPSTREAM_REF=${UPSTREAM_REF:-bfa7d9810dad650bd2dc4cf91a4d492e4c1ff10e}
 KERNEL_COMMIT=1782065b5f3dad41d3785247e50820553c3473e6
+KERNEL_TAG=android15-6.6.142_r00
+CLANG_TAG=android-14.0.0_r66
 
-: "${CLANG_BIN:?Set CLANG_BIN to the bin directory of Android Clang r510928}"
-if [[ ! -x "$CLANG_BIN/clang" ]]; then
-    echo "clang not found or not executable: $CLANG_BIN/clang" >&2
-    exit 1
-fi
+CLANG_BIN=${CLANG_BIN:-"$CLANG_SRC/clang-r510928/bin"}
 for tool in git make python3; do
     command -v "$tool" >/dev/null || { echo "Missing required tool: $tool" >&2; exit 1; }
 done
@@ -24,16 +24,28 @@ done
 mkdir -p "$SOURCES_DIR" "$KERNEL_OUT"
 
 if [[ ! -d "$UPSTREAM_DIR/.git" ]]; then
-    git clone "$UPSTREAM_URL" "$UPSTREAM_DIR"
+    git clone --depth 1 --no-checkout "$UPSTREAM_URL" "$UPSTREAM_DIR"
 fi
 git -C "$UPSTREAM_DIR" fetch --depth 1 origin "$UPSTREAM_REF"
 git -C "$UPSTREAM_DIR" checkout --detach FETCH_HEAD
 
 if [[ ! -d "$KERNEL_SRC/.git" ]]; then
-    git clone --filter=blob:none --no-checkout "$KERNEL_URL" "$KERNEL_SRC"
+    git clone --depth 1 --no-checkout "$KERNEL_URL" "$KERNEL_SRC"
 fi
 git -C "$KERNEL_SRC" fetch --depth 1 origin "$KERNEL_COMMIT"
 git -C "$KERNEL_SRC" checkout --detach "$KERNEL_COMMIT"
+
+if [[ ! -d "$CLANG_SRC/.git" ]]; then
+    git clone --depth 1 --filter=blob:none --sparse --branch "$CLANG_TAG" "$CLANG_URL" "$CLANG_SRC"
+fi
+# The AOSP prebuilt repo contains many toolchains; check out only r510928.
+git -C "$CLANG_SRC" sparse-checkout set clang-r510928
+
+if [[ ! -x "$CLANG_BIN/clang" ]]; then
+    echo "clang not found or not executable: $CLANG_BIN/clang" >&2
+    echo "Set CLANG_BIN to the Android Clang r510928 bin directory, or CLANG_SRC to its checkout directory." >&2
+    exit 1
+fi
 
 config="$UPSTREAM_DIR/kernel/configs/tb311fu_defconfig"
 patch="$UPSTREAM_DIR/kernel/patches/0001-host-openssl.patch"
