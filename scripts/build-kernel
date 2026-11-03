@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT=$(cd -- "$(dirname -- "$0")/.." && pwd)
+BUILD_DIR=${BUILD_DIR:-"$ROOT/build"}
+SOURCES_DIR="$BUILD_DIR/sources"
+UPSTREAM_DIR=${UPSTREAM_DIR:-"$SOURCES_DIR/linux-lenovo-tb311fu"}
+KERNEL_SRC=${KERNEL_SRC:-"$SOURCES_DIR/android-common"}
+KERNEL_OUT=${KERNEL_OUT:-"$BUILD_DIR/kernel"}
+UPSTREAM_URL=https://github.com/soumarcelino/linux-lenovo-tb311fu.git
+KERNEL_URL=https://android.googlesource.com/kernel/common
+UPSTREAM_REF=${UPSTREAM_REF:-bfa7d9810dad650bd2dc4cf91a4d492e4c1ff10e}
+KERNEL_COMMIT=1782065b5f3dad41d3785247e50820553c3473e6
+
+: "${CLANG_BIN:?Set CLANG_BIN to the bin directory of Android Clang r510928}"
+if [[ ! -x "$CLANG_BIN/clang" ]]; then
+    echo "clang not found or not executable: $CLANG_BIN/clang" >&2
+    exit 1
+fi
+for tool in git make python3; do
+    command -v "$tool" >/dev/null || { echo "Missing required tool: $tool" >&2; exit 1; }
+done
+
+mkdir -p "$SOURCES_DIR" "$KERNEL_OUT"
+
+if [[ ! -d "$UPSTREAM_DIR/.git" ]]; then
+    git clone "$UPSTREAM_URL" "$UPSTREAM_DIR"
+fi
+git -C "$UPSTREAM_DIR" fetch --depth 1 origin "$UPSTREAM_REF"
+git -C "$UPSTREAM_DIR" checkout --detach FETCH_HEAD
+
+if [[ ! -d "$KERNEL_SRC/.git" ]]; then
+    git clone --filter=blob:none --no-checkout "$KERNEL_URL" "$KERNEL_SRC"
+fi
+git -C "$KERNEL_SRC" fetch --depth 1 origin "$KERNEL_COMMIT"
+git -C "$KERNEL_SRC" checkout --detach "$KERNEL_COMMIT"
+
+config="$UPSTREAM_DIR/kernel/configs/tb311fu_defconfig"
+patch="$UPSTREAM_DIR/kernel/patches/0001-host-openssl.patch"
+[[ -f "$config" ]] || { echo "Missing upstream kernel config: $config" >&2; exit 1; }
+[[ -f "$patch" ]] || { echo "Missing upstream kernel patch: $patch" >&2; exit 1; }
+
+# Apply the upstream host-OpenSSL compatibility patch once.
+if git -C "$KERNEL_SRC" apply --reverse --check "$patch" >/dev/null 2>&1; then
+    echo "Kernel compatibility patch already applied."
+else
+    git -C "$KERNEL_SRC" apply --check "$patch"
+    git -C "$KERNEL_SRC" apply "$patch"
+fi
+
+cp "$config" "$KERNEL_OUT/.config"
+export PATH="$CLANG_BIN:$PATH"
+export ARCH=arm64 LLVM=1 LLVM_IAS=1
+export KCONFIG_OVERWRITECONFIG=1
+export KBUILD_BUILD_USER=builder KBUILD_BUILD_HOST=localhost
+export KCFLAGS="${KCFLAGS:-} -D__ANDROID_COMMON_KERNEL__"
+
+make -C "$KERNEL_SRC" O="$KERNEL_OUT" olddefconfig
+make -C "$KERNEL_SRC" O="$KERNEL_OUT" -j"${JOBS:-$(nproc)}" Image modules
+
+echo "Kernel build complete: $KERNEL_OUT/arch/arm64/boot/Image"
+echo "Kernel modules are under: $KERNEL_OUT"
