@@ -1,0 +1,21 @@
+name: Repository CI
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+
+jobs:
+  sanity:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Verify expected repository structure
+        run: |
+          set -eu
+          test -f README.md
+          test -d docs
+          echo "Repository sanity checks passed."
